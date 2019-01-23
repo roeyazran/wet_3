@@ -34,12 +34,17 @@ class knn_classifier(abstract_classifier):
         countPos = 0
         countNeg = 0
         #counting the classification of the closest k items
-        for index in ObjectsDistances.argsort()[:self.k]:
+        for tmp,index in enumerate(ObjectsDistances.argsort()[:self.k]):
             #print (index," closest distance: ", ObjectsDistances[index])
             if ObjectsLabels[index]:
                 countPos += 1
             else:
                 countNeg += 1
+            # tempi=1
+            # while(ObjectsLabels[index] == ObjectsLabels[ObjectsDistances.argsort()[tmp+tempi]]):
+            #     tempi +=1
+            #     print(ObjectsDistances[ObjectsDistances.argsort()[tmp+tempi]])
+            # print("distance to close ", ObjectsDistances[index], "mark as", ObjectsLabels[index], "diffent niebbhor is" , tempi)
         return True if countPos >= countNeg else False
 
 class knn_factory(abstract_classifier_factory):
@@ -183,9 +188,135 @@ def experiment1():
         acc, err = evalute(ClassifierFactory, 2)
         exp1_writer.writerow(["2", acc, err])
 
+
+# globalBannedFeature = [133,99,84,184,125,185,95,96,100]
+
+majorFeaturesWeights = {
+    3: 10,
+    158: 30,
+    36: 30,
+    25: 10,
+    11: 5,
+    185: 0,
+    125: 0
+}
+
+def contest_euclidean_distance(ObjectA, ObjectB):
+    distance = 0
+    for index in range(len(ObjectA)):
+        delta = ((ObjectA[index]-ObjectB[index])**2)
+        if index in majorFeaturesWeights:
+            delta *= majorFeaturesWeights[index]
+        distance += delta
+        distance += addDistance(ObjectA, ObjectB)
+    return distance**(0.5)
+
+def addDistance(ObjectA, ObjectB):
+    panelty = 0
+    if (ObjectB[25] > 0.043 and ObjectA[25]< 0.043) or (ObjectB[25] < 0.043 and ObjectA[25]> 0.043) :
+        panelty += 0.5
+    if (ObjectB[158] > -0.02 and ObjectA[158]< -0.02) or (ObjectB[158] < -0.02 and ObjectA[158]> -0.02) :
+        panelty += 0.7
+    if (ObjectB[36] < 0.007 and ObjectA[36]< 0.007) or (ObjectB[36] < 0.007 and ObjectA[36]> 0.007) :
+        panelty += 0.6
+    if (ObjectB[11] < 0.438 and ObjectA[11]< 0.438) or (ObjectB[11] < 0.438 and ObjectA[11]> 0.438) :
+        panelty += 0.3
+
+    return panelty
+
+class contest_knn_classifier(abstract_classifier):
+    def __init__(self, DataFeatures, DataLabels, k=1):
+        self.k = k
+        self.DataFeatures = DataFeatures
+        self.DataLabels = DataLabels
+
+    def classify(self, features):
+        ObjectsDistances = np.empty(len(self.DataFeatures))
+        ObjectsLabels = np.empty(len(self.DataLabels))
+        for index in range(len(self.DataFeatures)):
+            ObjectsDistances[index] = contest_euclidean_distance(self.DataFeatures[index], features)
+            #print ("distance: ", ObjectsDistances[index])
+            ObjectsLabels[index] = self.DataLabels[index]
+        countPos = 0
+        countNeg = 0
+        #counting the classification of the closest k items
+        for index in ObjectsDistances.argsort()[:self.k]:
+            #print (index," closest distance: ", ObjectsDistances[index])
+            if ObjectsLabels[index]:
+                countPos += 1
+            else:
+                countNeg += 1
+        if countPos >= countNeg:
+            return True
+        else:
+            return False
+
+
+def contest_eval(classifier_factory):
+    classRes = list()
+    Classifier = classifier_factory.train(GlobalDataSet[0], GlobalDataSet[1])
+    for sampleToClass in GlobalDataSet[2]:
+        classRes.append(Classifier.classify(sampleToClass))
+    write_prediction(classRes)
+
+
+def evalute2(classifier_factory, k):
+    foldsLists = list()
+    DatasetLen = 0
+    for index in range(1, k+1):
+        foldsLists.append(load_k_fold_data(index))
+        DatasetLen += len(load_k_fold_data(index)[0])
+    TruePos = 0
+    TrueNeg = 0
+    FalsePos = 0
+    FalseNeg = 0
+    for index in range(k):
+        print ("Testing ", index + 1, " fold")
+        TraningSetData = list()
+        TraningSetLabels = list()
+        for j in range(k):
+            if j != index:
+                #print(foldsLists[j][0])
+                TraningSetLabels.extend(foldsLists[j][1])
+                TraningSetData.extend(foldsLists[j][0])
+        Knn_classifier = classifier_factory.train(TraningSetData, TraningSetLabels)
+        for SampleIndex, sample in enumerate(foldsLists[index][0]):
+            label = foldsLists[index][1][SampleIndex]
+            ClassRes = Knn_classifier.classify(sample)
+
+            if label == True:
+                if ClassRes == True:
+                    TruePos += 1
+                else:
+                    FalseNeg += 1
+                    print("miss TRUE")
+            else:
+                if ClassRes == False:
+                    TrueNeg += 1
+                else:
+                    FalsePos += 1
+                    print("miss FALSE")
+    AvgAccuracy = (TruePos+TrueNeg)/DatasetLen
+    AvgError = (FalsePos + FalseNeg)/DatasetLen
+    print("OverAll results folds= ", k, "AvgAccuracy= ", AvgAccuracy, "AvgError= ", AvgError )
+    return AvgAccuracy, AvgError
+
+
+
+class contest_factory(abstract_classifier_factory):
+    def train(self, data, labels):
+        KNNClassifier = contest_knn_classifier(data, labels, 1)
+        return KNNClassifier
+
+
+def contest():
+    ClassifierFactory = contest_factory()
+    contest_eval(ClassifierFactory)
+
+
 if __name__ == '__main__':
 #    print(GlobalDataSet)
 #    split_crosscheck_groups(GlobalDataSet, 2)
     experiments6()
-#    experiment1()
-
+    experiment1()
+    contest()
